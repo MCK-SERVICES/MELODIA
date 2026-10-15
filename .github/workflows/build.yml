@@ -1,0 +1,59 @@
+name: Construire l'APK
+ 
+on:
+  push:
+  workflow_dispatch:
+ 
+permissions:
+  contents: write
+ 
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - name: Ranger les fichiers dans les bons dossiers
+        run: |
+          set -e
+          P=app/src/main/java/com/perso/melodia
+          R=app/src/main/res
+          mkdir -p $P/data $P/ui $R/values $R/drawable $R/mipmap-anydpi-v26 gradle/wrapper
+          [ -f "build.gradle (1).kts" ] && mv build.gradle.kts app/build.gradle.kts && mv "build.gradle (1).kts" build.gradle.kts
+          [ -f AndroidManifest.xml ] && mv AndroidManifest.xml app/src/main/
+          for f in Music.kt Lyrics.kt; do [ -f $f ] && mv $f $P/data/; done
+          for f in Common.kt Library.kt Player.kt; do [ -f $f ] && mv $f $P/ui/; done
+          for f in MainActivity.kt MusicViewModel.kt PlaybackService.kt; do [ -f $f ] && mv $f $P/; done
+          for f in colors.xml strings.xml themes.xml; do [ -f $f ] && mv $f $R/values/; done
+          [ -f ic_launcher_foreground.xml ] && mv ic_launcher_foreground.xml $R/drawable/
+          [ -f ic_launcher.xml ] && mv ic_launcher.xml $R/mipmap-anydpi-v26/
+          for f in gradle-wrapper.jar gradle-wrapper.properties; do [ -f $f ] && mv $f gradle/wrapper/; done
+          chmod +x gradlew
+          find . -path ./.git -prune -o -type f -print | sort
+ 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+ 
+      - uses: gradle/actions/setup-gradle@v4
+ 
+      - name: Compiler l'application
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+ 
+      - name: Renommer l'APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Melodia.apk
+ 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Melodia-apk
+          path: Melodia.apk
+ 
+      - name: Publier l'APK (téléchargement direct)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "build-${{ github.run_number }}" Melodia.apk \
+            --title "Mélodia – version ${{ github.run_number }}" \
+            --notes "Télécharge Melodia.apk depuis ton téléphone et installe-le."
+Dispose d’un menu contextuel
