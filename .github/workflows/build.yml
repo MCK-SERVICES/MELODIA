@@ -47,6 +47,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "build-${{ github.run_number }}" Scanix.apk \
+          gh release create "scanix-${{ github.run_number }}" Scanix.apk --target "${{ github.sha }}" --latest=false \
             --title "Scanix – version ${{ github.run_number }}" \
             --notes "Télécharge Scanix.apk depuis ton téléphone et installe-le."
