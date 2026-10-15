@@ -4,7 +4,11 @@ Lecteur pour les musiques déjà téléchargées sur ton téléphone, avec parol
 100 % gratuit : aucun compte, aucune clé, aucune pub.
 
 ## Fonctions
-- Bibliothèque automatique : **Titres**, **Albums**, **Artistes**, recherche
+- **Choix des dossiers** : seuls les dossiers cochés (et leurs sous-dossiers) sont lus — bouton 📁 en haut
+- **Playlists** : création, renommage, suppression, « Titres favoris » (♥ dans le lecteur)
+- Menu ⋮ sur chaque titre : lire ensuite, ajouter à la file, ajouter à une playlist
+- Interface néon / verre dépoli animée, glisser la pochette : ← suivant, → précédent, ↓ fermer
+- Bibliothèque : **Titres**, **Albums**, **Artistes**, **Playlists**, recherche
 - Lecture aléatoire, répétition (tout / un titre), titre suivant / précédent
 - Lecture en arrière-plan + contrôles dans la notification et sur l'écran verrouillé
 - Pause automatique quand on débranche les écouteurs

@@ -11,15 +11,24 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import com.perso.melodia.data.FAVORITES_ID
+import com.perso.melodia.data.Folders
 import com.perso.melodia.data.Lyrics
 import com.perso.melodia.data.LyricsRepository
 import com.perso.melodia.data.MusicRepository
+import com.perso.melodia.data.Playlist
+import com.perso.melodia.data.PlaylistStore
+import com.perso.melodia.data.Settings
 import com.perso.melodia.data.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,12 +51,38 @@ sealed interface LyricsUi {
 class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private val lyricsRepo = LyricsRepository(app)
+    private val settings = Settings(app)
+    private val store = PlaylistStore(app)
 
-    private val _songs = MutableStateFlow<List<Song>>(emptyList())
-    val songs: StateFlow<List<Song>> = _songs
+    // ---------- Bibliothèque ----------
+
+    /** Tous les fichiers audio du téléphone */
+    private val _all = MutableStateFlow<List<Song>>(emptyList())
+    val allSongs: StateFlow<List<Song>> = _all
+
+    private val _selectedFolders = MutableStateFlow(settings.folders)
+    /** Dossiers choisis (null = pas encore configuré) */
+    val selectedFolders: StateFlow<Set<String>?> = _selectedFolders
+
+    /** Seulement les titres des dossiers choisis */
+    val songs: StateFlow<List<Song>> = combine(_all, _selectedFolders) { all, sel ->
+        if (sel == null) all else all.filter { Folders.matches(it.folder, sel) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val songIndex: StateFlow<Map<Long, Song>> = _all
+        .map { list -> list.associateBy { it.id } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading
-    private var byId: Map<String, Song> = emptyMap()
+
+    val playlists: StateFlow<List<Playlist>> = store.items
+
+    val favoriteIds: StateFlow<Set<Long>> = store.items
+        .map { list -> list.firstOrNull { it.id == FAVORITES_ID }?.songIds?.toSet() ?: emptySet() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    // ---------- Lecteur ----------
 
     private val _player = MutableStateFlow(PlayerUi())
     val player: StateFlow<PlayerUi> = _player
@@ -59,6 +94,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var lyricsJob: Job? = null
     private var lyricsForId: Long? = null
 
+    private var byId: Map<Long, Song> = emptyMap()
     private var controller: MediaController? = null
     private val pending = mutableListOf<(MediaController) -> Unit>()
     private val controllerFuture: ListenableFuture<MediaController>
@@ -93,11 +129,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             val list = withContext(Dispatchers.IO) {
                 runCatching { MusicRepository.loadSongs(getApplication()) }.getOrDefault(emptyList())
             }
-            _songs.value = list
-            byId = list.associateBy { it.id.toString() }
+            byId = list.associateBy { it.id }
+            _all.value = list
             _loading.value = false
             refresh()
         }
+    }
+
+    fun setFolders(folders: Set<String>) {
+        settings.folders = folders
+        _selectedFolders.value = folders
     }
 
     private fun withController(action: (MediaController) -> Unit) {
@@ -106,7 +147,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun refresh() {
         val c = controller ?: return
-        val song = c.currentMediaItem?.mediaId?.let { byId[it] }
+        val song = c.currentMediaItem?.mediaId?.toLongOrNull()?.let { byId[it] }
         _player.value = PlayerUi(
             song = song,
             isPlaying = c.playWhenReady && c.playbackState != Player.STATE_ENDED,
@@ -127,6 +168,24 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             c.setMediaItems(list.map { it.toMediaItem() }, start, 0L)
             c.prepare()
             c.play()
+        }
+    }
+
+    /** Lire juste après le titre en cours */
+    fun playNext(song: Song) = withController { c ->
+        if (c.mediaItemCount == 0) {
+            c.setMediaItem(song.toMediaItem()); c.prepare(); c.play()
+        } else {
+            c.addMediaItem(c.currentMediaItemIndex + 1, song.toMediaItem())
+        }
+    }
+
+    /** Ajouter à la fin de la file d'attente */
+    fun addToQueue(song: Song) = withController { c ->
+        if (c.mediaItemCount == 0) {
+            c.setMediaItem(song.toMediaItem()); c.prepare(); c.play()
+        } else {
+            c.addMediaItem(song.toMediaItem())
         }
     }
 
@@ -151,6 +210,17 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             else -> Player.REPEAT_MODE_OFF
         }
     }
+
+    // ---------- Playlists ----------
+
+    fun createPlaylist(name: String, songs: List<Song> = emptyList()): Long =
+        store.create(name, songs.map { it.id })
+
+    fun addToPlaylist(playlistId: Long, songs: List<Song>) = store.add(playlistId, songs.map { it.id })
+    fun removeFromPlaylist(playlistId: Long, song: Song) = store.remove(playlistId, song.id)
+    fun renamePlaylist(playlistId: Long, name: String) = store.rename(playlistId, name)
+    fun deletePlaylist(playlistId: Long) = store.delete(playlistId)
+    fun toggleFavorite(song: Song) = store.toggleFavorite(song.id)
 
     // ---------- Paroles ----------
 
