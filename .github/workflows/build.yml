@@ -56,4 +56,3 @@ jobs:
           gh release create "build-${{ github.run_number }}" Melodia.apk \
             --title "Mélodia – version ${{ github.run_number }}" \
             --notes "Télécharge Melodia.apk depuis ton téléphone et installe-le."
-Dispose d’un menu contextuel
